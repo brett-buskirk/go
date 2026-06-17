@@ -87,6 +87,24 @@ h1 {
   border-color: rgba(255, 107, 107, 0.55) !important;
 }
 
+#setup {
+  text-align: center;
+  margin-top: 14px;
+  font-size: 13px;
+  color: #aeb6c2;
+}
+
+#setup label {
+  cursor: pointer;
+  margin: 0 5px;
+}
+
+#setup input {
+  vertical-align: middle;
+  margin-right: 3px;
+  cursor: pointer;
+}
+
 #message {
   text-align: center;
   margin-top: 12px;

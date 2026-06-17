@@ -15,6 +15,9 @@ let gameOver;
 let history;          // Set of past board positions, for the ko / repetition rule
 let scoring;          // true once the game has ended and we're counting territory
 let dead;             // Set of "r,c" stones marked dead during scoring
+let mode = 'human';   // 'human' (two players) | 'computer' (vs the AI)
+let humanColor = 'black';
+let aiColor = 'white';
 
 const opponent = color => (color === 'black' ? 'white' : 'black');
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
@@ -62,48 +65,53 @@ function hash(b) {
 
 const cloneBoard = b => b.map(row => row.slice());
 
+// Resolve placing `color` at (r,c) on board `b`, applying captures and the
+// suicide rule. Returns { board, captured } for the resulting position, or
+// null if the point is occupied or the move is suicide. (Ko is checked
+// separately by the caller, since it needs the game's position history.)
+function resolveMove(b, color, r, c) {
+  if (b[r][c] !== null) return null;
+  const nb = cloneBoard(b);
+  nb[r][c] = color;
+  const foe = opponent(color);
+
+  // Remove any adjacent enemy group left with zero liberties.
+  let captured = 0;
+  for (const [nr, nc] of neighbors(r, c)) {
+    if (nb[nr][nc] === foe) {
+      const group = groupAt(nr, nc, foe, nb);
+      if (group.liberties === 0) {
+        for (const [gr, gc] of group.stones) nb[gr][gc] = null;
+        captured += group.stones.length;
+      }
+    }
+  }
+
+  // Suicide: a stone whose own group has no liberties after captures is illegal.
+  // (If we captured anything, a liberty was freed, so zero here means self-capture.)
+  if (groupAt(r, c, color, nb).liberties === 0) return null;
+  return { board: nb, captured };
+}
+
 // Attempt to place `turn`'s stone at (r,c). Returns { ok, reason, captured }.
 // Nothing is committed unless the move is fully legal.
 function tryMove(r, c) {
   if (gameOver) return { ok: false, reason: 'The game is over.' };
   if (board[r][c] !== null) return { ok: false, reason: 'There is already a stone there.' };
 
-  const color = turn;
-  const foe = opponent(color);
-  const b = cloneBoard(board);
-  b[r][c] = color;
-
-  // 1. Remove any adjacent enemy group left with zero liberties.
-  let captured = 0;
-  for (const [nr, nc] of neighbors(r, c)) {
-    if (b[nr][nc] === foe) {
-      const group = groupAt(nr, nc, foe, b);
-      if (group.liberties === 0) {
-        for (const [gr, gc] of group.stones) b[gr][gc] = null;
-        captured += group.stones.length;
-      }
-    }
-  }
-
-  // 2. Suicide rule: if the stone's own group has no liberties after captures,
-  //    the move is illegal. (If we captured anything, a liberty was freed, so
-  //    a zero-liberty result here can only mean true self-capture.)
-  if (groupAt(r, c, color, b).liberties === 0) {
-    return { ok: false, reason: 'Illegal move: suicide is not allowed.' };
-  }
-
-  // 3. Ko / positional superko: a move may not recreate a previous position.
-  if (history.has(hash(b))) {
+  const res = resolveMove(board, turn, r, c);
+  if (!res) return { ok: false, reason: 'Illegal move: suicide is not allowed.' };
+  if (history.has(hash(res.board))) {
     return { ok: false, reason: 'Illegal move: ko — you cannot recreate a previous board position.' };
   }
 
   // Commit.
-  board = b;
-  captures[color] += captured;
-  history.add(hash(b));
+  board = res.board;
+  captures[turn] += res.captured;
+  history.add(hash(res.board));
   passes = 0;
-  turn = foe;
-  return { ok: true, captured };
+  turn = opponent(turn);
+  return { ok: true, captured: res.captured };
 }
 
 // --- actions --------------------------------------------------------------
@@ -122,6 +130,7 @@ function pass() {
     turn = opponent(turn);
     render();
     updateStatus();
+    scheduleAi();
   }
 }
 
@@ -145,6 +154,7 @@ function newGame() {
   setScore('');
   render();
   updateStatus();
+  scheduleAi();   // if the computer plays Black, it moves first
 }
 
 // --- scoring (area / Chinese rules) ---------------------------------------
@@ -217,6 +227,106 @@ function toggleDead(r, c) {
   }
   renderScoring();
   updateStatus();
+}
+
+// --- computer opponent (heuristic) ----------------------------------------
+
+// Is (r,c) an eye for `color`? (an empty point the AI should not fill itself).
+// Standard heuristic: every orthogonal neighbor is `color`, and enough diagonals
+// are too — all of them on an edge/corner, or at least 3 of 4 in open space.
+function isEye(b, color, r, c) {
+  if (b[r][c] !== null) return false;
+  for (const [nr, nc] of neighbors(r, c)) {
+    if (b[nr][nc] !== color) return false;
+  }
+  const diagonals = [[r - 1, c - 1], [r - 1, c + 1], [r + 1, c - 1], [r + 1, c + 1]]
+    .filter(([dr, dc]) => dr >= 0 && dr < SIZE && dc >= 0 && dc < SIZE);
+  const friendly = diagonals.filter(([dr, dc]) => b[dr][dc] === color).length;
+  const offBoard = 4 - diagonals.length;
+  return offBoard > 0 ? friendly === diagonals.length : friendly >= 3;
+}
+
+// Total number of `color` stones that are in atari (their group has 1 liberty).
+function countAtari(b, color) {
+  const seen = Array.from({ length: SIZE }, () => Array(SIZE).fill(false));
+  let total = 0;
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (b[r][c] === color && !seen[r][c]) {
+        const group = groupAt(r, c, color, b);
+        for (const [gr, gc] of group.stones) seen[gr][gc] = true;
+        if (group.liberties === 1) total += group.stones.length;
+      }
+    }
+  }
+  return total;
+}
+
+// Score a resolved candidate move for `color`. Higher is better.
+function evaluateMove(res, color, r, c) {
+  const nb = res.board;
+  let s = res.captured * 12;                              // capturing is great
+
+  const ownLiberties = groupAt(r, c, color, nb).liberties;
+  if (res.captured === 0 && ownLiberties === 1) s -= 8;  // walking into self-atari
+
+  s -= countAtari(nb, color) * 1.5;                      // keep own groups safe
+  s += countAtari(nb, opponent(color)) * 1.0;           // pressure enemy groups
+
+  let contact = 0;                                       // build connected shapes
+  for (const [nr, nc] of neighbors(r, c)) if (board[nr][nc] !== null) contact++;
+  s += contact * 0.6;
+
+  return s;
+}
+
+// Pick the AI's move: the best-scoring legal point, or null to pass.
+function chooseAiMove() {
+  let best = null;
+  let bestScore = -Infinity;
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (board[r][c] !== null) continue;
+      if (isEye(board, aiColor, r, c)) continue;         // never fill its own eyes
+      const res = resolveMove(board, aiColor, r, c);
+      if (!res) continue;                                // occupied or suicide
+      if (history.has(hash(res.board))) continue;        // ko
+      const score = evaluateMove(res, aiColor, r, c) + Math.random() * 0.4;
+      if (score > bestScore) {
+        bestScore = score;
+        best = [r, c];
+      }
+    }
+  }
+  if (!best) return null;                                // no legal move -> pass
+  if (passes >= 1 && bestScore < 3) return null;         // opponent passed, nothing useful -> agree to end
+  if (bestScore < -6) return null;                       // only terrible moves left -> pass
+  return best;
+}
+
+// If it's the computer's turn, let it move shortly (so the UI repaints first).
+function scheduleAi() {
+  if (mode === 'computer' && !gameOver && !scoring && turn === aiColor) {
+    setTimeout(aiMove, 350);
+  }
+}
+
+function aiMove() {
+  if (mode !== 'computer' || gameOver || scoring || turn !== aiColor) return;
+  const move = chooseAiMove();
+  if (!move) {
+    pass();
+    return;
+  }
+  const res = tryMove(move[0], move[1]);
+  if (!res.ok) {            // shouldn't happen — candidates are pre-validated
+    pass();
+    return;
+  }
+  setMessage(res.captured ? `Computer captured ${res.captured} stone${res.captured > 1 ? 's' : ''}.` : '');
+  render();
+  updateStatus();
+  scheduleAi();
 }
 
 // --- board construction ---------------------------------------------------
@@ -325,7 +435,11 @@ function renderScoring() {
 }
 
 function updateStatus() {
-  const indicator = scoring ? 'Scoring' : gameOver ? 'Game Over' : `${cap(turn)} Stone`;
+  let indicator;
+  if (scoring) indicator = 'Scoring';
+  else if (gameOver) indicator = 'Game Over';
+  else if (mode === 'computer') indicator = turn === humanColor ? `Your move (${cap(humanColor)})` : 'Computer thinking…';
+  else indicator = `${cap(turn)} Stone`;
   document.getElementById('indicator').textContent = indicator;
   document.getElementById('black-captures').textContent = `Black captured: ${captures.black}`;
   document.getElementById('white-captures').textContent = `White captured: ${captures.white}`;
@@ -356,19 +470,36 @@ $(function () {
       toggleDead(r, c);
       return;
     }
+    if (mode === 'computer' && turn === aiColor) return;   // not your turn
     const result = tryMove(r, c);
     if (result.ok) {
       setMessage(result.captured ? `${cap(opponent(turn))} captured ${result.captured} stone${result.captured > 1 ? 's' : ''}.` : '');
       render();
       updateStatus();
+      scheduleAi();
     } else {
       setMessage(result.reason);
     }
   });
 
-  $('#pass').on('click', pass);
-  $('#resign').on('click', resign);
+  $('#pass').on('click', () => {
+    if (mode === 'computer' && turn === aiColor) return;   // wait for the computer
+    pass();
+  });
+  $('#resign').on('click', () => {
+    if (mode === 'computer' && turn === aiColor) return;
+    resign();
+  });
   $('#newgame').on('click', newGame);
+
+  // Opponent / color selection — applying it starts a fresh game.
+  $('input[name=mode], input[name=pcolor]').on('change', () => {
+    mode = $('input[name=mode]:checked').val();
+    humanColor = $('input[name=pcolor]:checked').val();
+    aiColor = opponent(humanColor);
+    $('#color-choice').toggleClass('hidden', mode !== 'computer');
+    newGame();
+  });
 
   // Rules modal: open on button, close on ✕, on backdrop click, or on Escape.
   const closeRules = () => $('#rules-overlay').addClass('hidden');
