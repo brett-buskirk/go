@@ -555,21 +555,35 @@ function bestRootMove(root) {
 
 // --- board construction ---------------------------------------------------
 
-const CELL = 44;                       // pixels between adjacent intersections
-const MARGIN = 32;                     // tan border between the outer line and the frame
-const SPAN = (SIZE - 1) * CELL;        // distance across all lines
-const SURFACE = SPAN + MARGIN * 2;     // full board surface size
-const STONE = 40;                      // stone diameter
+const CELL_MAX = 44;                   // largest spacing between intersections (desktop)
 const SVGNS = 'http://www.w3.org/2000/svg';
 // Star points (hoshi) for a 13x13 board: the four 4-4 points plus tengen (center).
 const STARS = [[3, 3], [3, 9], [9, 3], [9, 9], [6, 6]];
 
+let CELL;     // pixels between adjacent intersections (sized to fit the viewport)
+let MARGIN;   // tan border between the outer line and the frame
+let SPAN;     // distance across all lines
+let SURFACE;  // full board surface size
+let STONE;    // stone diameter
 let pointEls = [];                     // pointEls[r][c] -> the intersection's DOM node
 
 // The intersection coordinate (in pixels) for row r / column c.
 const coord = k => MARGIN + k * CELL;
 
+// Size the board to the available space so it fits phones and desktops alike.
+function computeDimensions() {
+  const usableW = Math.min(window.innerWidth, 640) - 32 - 24;  // page padding + wood frame
+  const usableH = window.innerHeight - 240;                    // leave room for the controls
+  const target = Math.max(200, Math.min(usableW, usableH, 592));
+  CELL = Math.max(15, Math.min(CELL_MAX, Math.floor(target / 13.4)));
+  MARGIN = Math.round(CELL * 0.7);
+  STONE = Math.round(CELL * 0.92);
+  SPAN = (SIZE - 1) * CELL;
+  SURFACE = SPAN + MARGIN * 2;
+}
+
 function buildBoard() {
+  computeDimensions();
   const boardEl = document.getElementById('board');
   boardEl.innerHTML = '';
   boardEl.style.width = `${SURFACE}px`;
@@ -598,7 +612,7 @@ function buildBoard() {
     dot.setAttribute('class', 'star');
     dot.setAttribute('cx', coord(j));
     dot.setAttribute('cy', coord(i));
-    dot.setAttribute('r', 3.5);
+    dot.setAttribute('r', Math.max(2, CELL * 0.08));
     svg.appendChild(dot);
   }
   boardEl.appendChild(svg);
@@ -735,6 +749,22 @@ $(function () {
   });
   $(document).on('keydown', evt => {
     if (evt.key === 'Escape') closeRules();
+  });
+
+  // Re-fit the board when the viewport changes (rotation, resize) without
+  // disturbing the game — the board model is preserved, only the DOM is redrawn.
+  let resizeTimer;
+  $(window).on('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const before = CELL;
+      computeDimensions();
+      if (CELL !== before) {
+        buildBoard();
+        if (scoring) renderScoring(); else render();
+        updateStatus();
+      }
+    }, 150);
   });
 
   newGame();
