@@ -3,7 +3,7 @@
  * installed as a PWA. Cache-first since every asset is static; bump CACHE to
  * ship updated files.
  */
-const CACHE = 'go-v1'
+const CACHE = 'go-v2'
 
 // Paths are relative to this file, so they resolve correctly when the site is
 // served from a subpath (e.g. GitHub Pages at /go/).
