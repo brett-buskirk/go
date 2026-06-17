@@ -5,211 +5,80 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <title>Go</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
   <link rel="stylesheet" type="text/css" media="screen" href="css/main.css">
 </head>
 
 <body>
   <h1>Go (圍棋)</h1>
   <h2 id="indicator">Black Stone</h2>
-  <div id="outerborder">
-    <div id="board">
-      <div class="left">
-        <div class="grid"><div id="r1c1" class="ghost"></div></div>
-        <div class="grid"><div id="r2c1" class="ghost"></div></div>
-        <div class="grid"><div id="r3c1" class="ghost"></div></div>
-        <div class="grid"><div id="r4c1" class="ghost"></div></div>
-        <div class="grid"><div id="r5c1" class="ghost"></div></div>
-        <div class="grid"><div id="r6c1" class="ghost"></div></div>
-        <div class="grid"><div id="r7c1" class="ghost"></div></div>
-        <div class="grid"><div id="r8c1" class="ghost"></div></div>
-        <div class="grid"><div id="r9c1" class="ghost"></div></div>
-        <div class="grid"><div id="r10c1" class="ghost"></div></div>
-        <div class="grid"><div id="r11c1" class="ghost"></div></div>
-        <div class="grid"><div id="r12c1" class="ghost"></div></div>
-        <div class="grid"><div id="r13c1" class="ghost"></div></div>
-      </div>
-      <div class="col">
-        <div class="grid"><div id="r1c2" class="ghost"></div></div>
-        <div class="grid"><div id="r2c2" class="ghost"></div></div>
-        <div class="grid"><div id="r3c2" class="ghost"></div></div>
-        <div class="grid"><div id="r4c2" class="ghost"></div></div>
-        <div class="grid"><div id="r5c2" class="ghost"></div></div>
-        <div class="grid"><div id="r6c2" class="ghost"></div></div>
-        <div class="grid"><div id="r7c2" class="ghost"></div></div>
-        <div class="grid"><div id="r8c2" class="ghost"></div></div>
-        <div class="grid"><div id="r9c2" class="ghost"></div></div>
-        <div class="grid"><div id="r10c2" class="ghost"></div></div>
-        <div class="grid"><div id="r11c2" class="ghost"></div></div>
-        <div class="grid"><div id="r12c2" class="ghost"></div></div>
-        <div class="grid"><div id="r13c2" class="ghost"></div></div>
-      </div>
-      <div class="col">
-        <div class="grid"><div id="r1c3" class="ghost"></div></div>
-        <div class="grid"><div id="r2c3" class="ghost"></div></div>
-        <div class="grid"><div id="r3c3" class="ghost"></div></div>
-        <div class="grid"><div id="r4c3" class="ghost"></div></div>
-        <div class="grid"><div id="r5c3" class="ghost"></div></div>
-        <div class="grid"><div id="r6c3" class="ghost"></div></div>
-        <div class="grid"><div id="r7c3" class="ghost"></div></div>
-        <div class="grid"><div id="r8c3" class="ghost"></div></div>
-        <div class="grid"><div id="r9c3" class="ghost"></div></div>
-        <div class="grid"><div id="r10c3" class="ghost"></div></div>
-        <div class="grid"><div id="r11c3" class="ghost"></div></div>
-        <div class="grid"><div id="r12c3" class="ghost"></div></div>
-        <div class="grid"><div id="r13c3" class="ghost"></div></div>
-      </div>
-      <div class="col">
-          <div class="grid"><div id="r1c4" class="ghost"></div></div>
-          <div class="grid"><div id="r2c4" class="ghost"></div></div>
-          <div class="grid"><div id="r3c4" class="ghost"></div></div>
-          <div class="grid"><div id="r4c4" class="ghost"></div></div>
-          <div class="grid"><div id="r5c4" class="ghost"></div></div>
-          <div class="grid"><div id="r6c4" class="ghost"></div></div>
-          <div class="grid"><div id="r7c4" class="ghost"></div></div>
-          <div class="grid"><div id="r8c4" class="ghost"></div></div>
-          <div class="grid"><div id="r9c4" class="ghost"></div></div>
-          <div class="grid"><div id="r10c4" class="ghost"></div></div>
-          <div class="grid"><div id="r11c4" class="ghost"></div></div>
-          <div class="grid"><div id="r12c4" class="ghost"></div></div>
-          <div class="grid"><div id="r13c4" class="ghost"></div></div>
-      </div>
-      <div class="col">
-          <div class="grid"><div id="r1c5" class="ghost"></div></div>
-          <div class="grid"><div id="r2c5" class="ghost"></div></div>
-          <div class="grid"><div id="r3c5" class="ghost"></div></div>
-          <div class="grid"><div id="r4c5" class="ghost"></div></div>
-          <div class="grid"><div id="r5c5" class="ghost"></div></div>
-          <div class="grid"><div id="r6c5" class="ghost"></div></div>
-          <div class="grid"><div id="r7c5" class="ghost"></div></div>
-          <div class="grid"><div id="r8c5" class="ghost"></div></div>
-          <div class="grid"><div id="r9c5" class="ghost"></div></div>
-          <div class="grid"><div id="r10c5" class="ghost"></div></div>
-          <div class="grid"><div id="r11c5" class="ghost"></div></div>
-          <div class="grid"><div id="r12c5" class="ghost"></div></div>
-          <div class="grid"><div id="r13c5" class="ghost"></div></div>
-      </div>
-      <div class="col">
-          <div class="grid"><div id="r1c6" class="ghost"></div></div>
-          <div class="grid"><div id="r2c6" class="ghost"></div></div>
-          <div class="grid"><div id="r3c6" class="ghost"></div></div>
-          <div class="grid"><div id="r4c6" class="ghost"></div></div>
-          <div class="grid"><div id="r5c6" class="ghost"></div></div>
-          <div class="grid"><div id="r6c6" class="ghost"></div></div>
-          <div class="grid"><div id="r7c6" class="ghost"></div></div>
-          <div class="grid"><div id="r8c6" class="ghost"></div></div>
-          <div class="grid"><div id="r9c6" class="ghost"></div></div>
-          <div class="grid"><div id="r10c6" class="ghost"></div></div>
-          <div class="grid"><div id="r11c6" class="ghost"></div></div>
-          <div class="grid"><div id="r12c6" class="ghost"></div></div>
-          <div class="grid"><div id="r13c6" class="ghost"></div></div>
-      </div>
-      <div class="col">
-          <div class="grid"><div id="r1c7" class="ghost"></div></div>
-          <div class="grid"><div id="r2c7" class="ghost"></div></div>
-          <div class="grid"><div id="r3c7" class="ghost"></div></div>
-          <div class="grid"><div id="r4c7" class="ghost"></div></div>
-          <div class="grid"><div id="r5c7" class="ghost"></div></div>
-          <div class="grid"><div id="r6c7" class="ghost"></div></div>
-          <div class="grid"><div id="r7c7" class="ghost"></div></div>
-          <div class="grid"><div id="r8c7" class="ghost"></div></div>
-          <div class="grid"><div id="r9c7" class="ghost"></div></div>
-          <div class="grid"><div id="r10c7" class="ghost"></div></div>
-          <div class="grid"><div id="r11c7" class="ghost"></div></div>
-          <div class="grid"><div id="r12c7" class="ghost"></div></div>
-          <div class="grid"><div id="r13c7" class="ghost"></div></div>
-      </div>
-      <div class="col">
-          <div class="grid"><div id="r1c8" class="ghost"></div></div>
-          <div class="grid"><div id="r2c8" class="ghost"></div></div>
-          <div class="grid"><div id="r3c8" class="ghost"></div></div>
-          <div class="grid"><div id="r4c8" class="ghost"></div></div>
-          <div class="grid"><div id="r5c8" class="ghost"></div></div>
-          <div class="grid"><div id="r6c8" class="ghost"></div></div>
-          <div class="grid"><div id="r7c8" class="ghost"></div></div>
-          <div class="grid"><div id="r8c8" class="ghost"></div></div>
-          <div class="grid"><div id="r9c8" class="ghost"></div></div>
-          <div class="grid"><div id="r10c8" class="ghost"></div></div>
-          <div class="grid"><div id="r11c8" class="ghost"></div></div>
-          <div class="grid"><div id="r12c8" class="ghost"></div></div>
-          <div class="grid"><div id="r13c8" class="ghost"></div></div>
-      </div>
-      <div class="col">
-          <div class="grid"><div id="r1c9" class="ghost"></div></div>
-          <div class="grid"><div id="r2c9" class="ghost"></div></div>
-          <div class="grid"><div id="r3c9" class="ghost"></div></div>
-          <div class="grid"><div id="r4c9" class="ghost"></div></div>
-          <div class="grid"><div id="r5c9" class="ghost"></div></div>
-          <div class="grid"><div id="r6c9" class="ghost"></div></div>
-          <div class="grid"><div id="r7c9" class="ghost"></div></div>
-          <div class="grid"><div id="r8c9" class="ghost"></div></div>
-          <div class="grid"><div id="r9c9" class="ghost"></div></div>
-          <div class="grid"><div id="r10c9" class="ghost"></div></div>
-          <div class="grid"><div id="r11c9" class="ghost"></div></div>
-          <div class="grid"><div id="r12c9" class="ghost"></div></div>
-          <div class="grid"><div id="r13c9" class="ghost"></div></div>
-      </div>
-      <div class="col">
-          <div class="grid"><div id="r1c10" class="ghost"></div></div>
-          <div class="grid"><div id="r2c10" class="ghost"></div></div>
-          <div class="grid"><div id="r3c10" class="ghost"></div></div>
-          <div class="grid"><div id="r4c10" class="ghost"></div></div>
-          <div class="grid"><div id="r5c10" class="ghost"></div></div>
-          <div class="grid"><div id="r6c10" class="ghost"></div></div>
-          <div class="grid"><div id="r7c10" class="ghost"></div></div>
-          <div class="grid"><div id="r8c10" class="ghost"></div></div>
-          <div class="grid"><div id="r9c10" class="ghost"></div></div>
-          <div class="grid"><div id="r10c10" class="ghost"></div></div>
-          <div class="grid"><div id="r11c10" class="ghost"></div></div>
-          <div class="grid"><div id="r12c10" class="ghost"></div></div>
-          <div class="grid"><div id="r13c10" class="ghost"></div></div>
-      </div>
-      <div class="col">
-          <div class="grid"><div id="r1c11" class="ghost"></div></div>
-          <div class="grid"><div id="r2c11" class="ghost"></div></div>
-          <div class="grid"><div id="r3c11" class="ghost"></div></div>
-          <div class="grid"><div id="r4c11" class="ghost"></div></div>
-          <div class="grid"><div id="r5c11" class="ghost"></div></div>
-          <div class="grid"><div id="r6c11" class="ghost"></div></div>
-          <div class="grid"><div id="r7c11" class="ghost"></div></div>
-          <div class="grid"><div id="r8c11" class="ghost"></div></div>
-          <div class="grid"><div id="r9c11" class="ghost"></div></div>
-          <div class="grid"><div id="r10c11" class="ghost"></div></div>
-          <div class="grid"><div id="r11c11" class="ghost"></div></div>
-          <div class="grid"><div id="r12c11" class="ghost"></div></div>
-          <div class="grid"><div id="r13c11" class="ghost"></div></div>
-      </div>
-      <div class="col">
-          <div class="grid"><div id="r1c12" class="ghost"></div></div>
-          <div class="grid"><div id="r2c12" class="ghost"></div></div>
-          <div class="grid"><div id="r3c12" class="ghost"></div></div>
-          <div class="grid"><div id="r4c12" class="ghost"></div></div>
-          <div class="grid"><div id="r5c12" class="ghost"></div></div>
-          <div class="grid"><div id="r6c12" class="ghost"></div></div>
-          <div class="grid"><div id="r7c12" class="ghost"></div></div>
-          <div class="grid"><div id="r8c12" class="ghost"></div></div>
-          <div class="grid"><div id="r9c12" class="ghost"></div></div>
-          <div class="grid"><div id="r10c12" class="ghost"></div></div>
-          <div class="grid"><div id="r11c12" class="ghost"></div></div>
-          <div class="grid"><div id="r12c12" class="ghost"></div></div>
-          <div class="grid"><div id="r13c12" class="ghost"></div></div>
-      </div>
-      <div class="col">
-          <div class="grid"><div id="r1c13" class="ghost"></div></div>
-          <div class="grid"><div id="r2c13" class="ghost"></div></div>
-          <div class="grid"><div id="r3c13" class="ghost"></div></div>
-          <div class="grid"><div id="r4c13" class="ghost"></div></div>
-          <div class="grid"><div id="r5c13" class="ghost"></div></div>
-          <div class="grid"><div id="r6c13" class="ghost"></div></div>
-          <div class="grid"><div id="r7c13" class="ghost"></div></div>
-          <div class="grid"><div id="r8c13" class="ghost"></div></div>
-          <div class="grid"><div id="r9c13" class="ghost"></div></div>
-          <div class="grid"><div id="r10c13" class="ghost"></div></div>
-          <div class="grid"><div id="r11c13" class="ghost"></div></div>
-          <div class="grid"><div id="r12c13" class="ghost"></div></div>
-          <div class="grid"><div id="r13c13" class="ghost"></div></div>
-      </div>
+  <div id="info">
+    <span id="black-captures">Black captured: 0</span>
+    <span id="white-captures">White captured: 0</span>
+  </div>
+  <div id="controls">
+    <button id="pass">Pass</button>
+    <button id="resign">Resign</button>
+    <button id="newgame">New Game</button>
+    <button id="rules">Rules</button>
+  </div>
+  <p id="message"></p>
+  <p id="score"></p>
+
+  <div id="rules-overlay" class="hidden">
+    <div id="rules-modal" role="dialog" aria-modal="true" aria-labelledby="rules-title">
+      <button id="rules-close" aria-label="Close">&times;</button>
+      <h2 id="rules-title">How to Play Go</h2>
+
+      <h3>Goal</h3>
+      <p>Control more of the board than your opponent. Your score is the number of
+      your stones on the board plus the empty territory they surround.</p>
+
+      <h3>Playing</h3>
+      <p>Black moves first. Click an empty intersection to place a stone; players
+      then alternate. A placed stone never moves — though it can be captured.</p>
+
+      <h3>Liberties &amp; capture</h3>
+      <p>A stone's <em>liberties</em> are its empty up/down/left/right neighbors.
+      Connected stones of the same color form a <em>group</em> that shares its
+      liberties. When an opponent fills a group's last liberty, the entire group
+      is captured and removed from the board.</p>
+
+      <h3>Illegal moves</h3>
+      <ul>
+        <li><strong>Suicide:</strong> you may not place a stone that would leave its
+        own group with no liberties — unless that same move captures enemy stones.</li>
+        <li><strong>Ko:</strong> you may not play a move that recreates a previous
+        board position. This stops endless back-and-forth recapture.</li>
+      </ul>
+
+      <h3>Ending the game</h3>
+      <p>When neither player wants to play on, each clicks <strong>Pass</strong>.
+      Two passes in a row end the game and begin scoring.</p>
+
+      <h3>Scoring</h3>
+      <ul>
+        <li>Click any <strong>dead stones</strong> (stones that cannot escape capture)
+        to remove them — you and your opponent agree which. They fade with a red ✕.</li>
+        <li>Each empty region surrounded by only one color is that color's
+        <strong>territory</strong>, shown as small dots. Regions touching both colors
+        are neutral.</li>
+        <li>Final score = stones on the board + territory. White also receives
+        <strong>komi</strong> (7.5 points) to offset Black's first-move advantage.</li>
+      </ul>
+
+      <h3>Buttons</h3>
+      <p><strong>Pass</strong> — give up your turn · <strong>Resign</strong> — concede the
+      game · <strong>New Game</strong> — start over · <strong>Rules</strong> — this guide.</p>
     </div>
-  </div>  
+  </div>
+
+  <!-- The board (lines, star points, and intersection points) is generated by js/main.js. -->
+  <div id="outerborder">
+    <div id="board"></div>
+  </div>
 
   <script src="js/jquery.js"></script>
   <script src="js/main.js"></script>
