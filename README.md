@@ -46,3 +46,7 @@ python3 -m http.server
 ## Tech
 
 Vanilla HTML / CSS / JavaScript with jQuery, a generated SVG board, and a service worker for offline play. Hosted on GitHub Pages.
+
+## License
+
+Released under the [MIT License](LICENSE).
