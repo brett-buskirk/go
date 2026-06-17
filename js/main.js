@@ -18,6 +18,8 @@ let dead;             // Set of "r,c" stones marked dead during scoring
 let mode = 'human';   // 'human' (two players) | 'computer' (vs the AI)
 let humanColor = 'black';
 let aiColor = 'white';
+let difficulty = 'easy';  // 'easy' (heuristic) | 'hard' (MCTS)
+let aiToken = 0;          // bumped each new game to cancel an in-flight MCTS search
 
 const opponent = color => (color === 'black' ? 'white' : 'black');
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
@@ -77,11 +79,15 @@ function resolveMove(b, color, r, c) {
 
   // Remove any adjacent enemy group left with zero liberties.
   let captured = 0;
+  const capturedStones = [];
   for (const [nr, nc] of neighbors(r, c)) {
     if (nb[nr][nc] === foe) {
       const group = groupAt(nr, nc, foe, nb);
       if (group.liberties === 0) {
-        for (const [gr, gc] of group.stones) nb[gr][gc] = null;
+        for (const [gr, gc] of group.stones) {
+          nb[gr][gc] = null;
+          capturedStones.push([gr, gc]);
+        }
         captured += group.stones.length;
       }
     }
@@ -90,7 +96,7 @@ function resolveMove(b, color, r, c) {
   // Suicide: a stone whose own group has no liberties after captures is illegal.
   // (If we captured anything, a liberty was freed, so zero here means self-capture.)
   if (groupAt(r, c, color, nb).liberties === 0) return null;
-  return { board: nb, captured };
+  return { board: nb, captured, capturedStones };
 }
 
 // Attempt to place `turn`'s stone at (r,c). Returns { ok, reason, captured }.
@@ -150,6 +156,7 @@ function newGame() {
   scoring = false;
   dead = new Set();
   history = new Set([hash(board)]);
+  aiToken += 1;   // cancel any MCTS search still running from a previous game
   setMessage('');
   setScore('');
   render();
@@ -304,16 +311,20 @@ function chooseAiMove() {
   return best;
 }
 
-// If it's the computer's turn, let it move shortly (so the UI repaints first).
-function scheduleAi() {
-  if (mode === 'computer' && !gameOver && !scoring && turn === aiColor) {
-    setTimeout(aiMove, 350);
-  }
+// Is it currently the computer's turn to move?
+function aiToMove() {
+  return mode === 'computer' && !gameOver && !scoring && turn === aiColor;
 }
 
-function aiMove() {
-  if (mode !== 'computer' || gameOver || scoring || turn !== aiColor) return;
-  const move = chooseAiMove();
+// If it's the computer's turn, let it move shortly (so the UI repaints first).
+function scheduleAi() {
+  if (!aiToMove()) return;
+  if (difficulty === 'hard') setTimeout(aiMoveHard, 60);
+  else setTimeout(aiMoveEasy, 350);
+}
+
+// Commit the computer's chosen move (or pass) and hand the turn back.
+function applyAiMove(move) {
   if (!move) {
     pass();
     return;
@@ -327,6 +338,219 @@ function aiMove() {
   render();
   updateStatus();
   scheduleAi();
+}
+
+function aiMoveEasy() {
+  if (!aiToMove()) return;
+  applyAiMove(chooseAiMove());
+}
+
+function aiMoveHard() {
+  if (!aiToMove()) return;
+  const token = aiToken;
+  mctsSearch(move => {
+    if (token === aiToken && aiToMove()) applyAiMove(move);
+  });
+}
+
+// --- computer opponent (Monte Carlo Tree Search) --------------------------
+
+const MCTS_TIME_MS = 1500;   // thinking budget per move
+const UCT_C = 1.414;         // exploration constant
+
+// Area score of a fully-played-out board (no dead-stone concept in rollouts).
+function scoreBoard(b) {
+  let black = 0;
+  let white = 0;
+  const visited = Array.from({ length: SIZE }, () => Array(SIZE).fill(false));
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (b[r][c] === 'black') black++;
+      else if (b[r][c] === 'white') white++;
+      else if (!visited[r][c]) {
+        const region = [];
+        const borders = new Set();
+        const stack = [[r, c]];
+        visited[r][c] = true;
+        while (stack.length) {
+          const [cr, cc] = stack.pop();
+          region.push([cr, cc]);
+          for (const [nr, nc] of neighbors(cr, cc)) {
+            const v = b[nr][nc];
+            if (v === null) {
+              if (!visited[nr][nc]) { visited[nr][nc] = true; stack.push([nr, nc]); }
+            } else {
+              borders.add(v);
+            }
+          }
+        }
+        if (borders.size === 1) {
+          if ([...borders][0] === 'black') black += region.length;
+          else white += region.length;
+        }
+      }
+    }
+  }
+  return { black, white };
+}
+
+// Play a random game to the end (each side fills non-eye points until only
+// eyes remain, then both pass) and return the winner under area scoring.
+function rollout(startBoard, startColor) {
+  let b = startBoard;
+  let color = startColor;
+  let consecutivePasses = 0;
+  const maxMoves = SIZE * SIZE * 2;
+
+  const empties = [];
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) if (b[r][c] === null) empties.push(`${r},${c}`);
+  }
+  const emptySet = new Set(empties);
+
+  for (let move = 0; move < maxMoves && consecutivePasses < 2; move++) {
+    const picked = randomPlayoutMove(b, color, emptySet);
+    if (!picked) {
+      consecutivePasses++;
+      color = opponent(color);
+      continue;
+    }
+    const [r, c] = picked;
+    const res = resolveMove(b, color, r, c);
+    emptySet.delete(`${r},${c}`);
+    for (const [cr, cc] of res.capturedStones) emptySet.add(`${cr},${cc}`);
+    b = res.board;
+    color = opponent(color);
+    consecutivePasses = 0;
+  }
+
+  const s = scoreBoard(b);
+  return s.black > s.white + KOMI ? 'black' : 'white';
+}
+
+// A random legal, non-eye-filling move for `color`, or null if none exists.
+function randomPlayoutMove(b, color, emptySet) {
+  const keys = [...emptySet];
+  // Fisher–Yates shuffle so we return the first legal move we hit, fairly.
+  for (let i = keys.length - 1; i > 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    [keys[i], keys[j]] = [keys[j], keys[i]];
+  }
+  for (const key of keys) {
+    const [r, c] = key.split(',').map(Number);
+    if (isEye(b, color, r, c)) continue;
+    if (resolveMove(b, color, r, c)) return [r, c];
+  }
+  return null;
+}
+
+function makeNode(b, toMove, passes, move, parent) {
+  return {
+    board: b, toMove, passes, move, parent,
+    children: [], untried: null, visits: 0, wins: 0,
+    terminal: passes >= 2,
+  };
+}
+
+// Legal moves at a node: every non-eye, non-suicide point, plus 'pass'.
+function nodeMoves(node) {
+  if (node.untried !== null) return node.untried;
+  if (node.terminal) { node.untried = []; return node.untried; }
+  const moves = [];
+  const { board: b, toMove } = node;
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (b[r][c] !== null) continue;
+      if (isEye(b, toMove, r, c)) continue;
+      if (resolveMove(b, toMove, r, c)) moves.push([r, c]);
+    }
+  }
+  moves.push('pass');
+  node.untried = moves;
+  return moves;
+}
+
+function selectChild(node) {
+  const logParent = Math.log(node.visits);
+  let best = null;
+  let bestVal = -Infinity;
+  for (const child of node.children) {
+    const val = child.wins / child.visits + UCT_C * Math.sqrt(logParent / child.visits);
+    if (val > bestVal) { bestVal = val; best = child; }
+  }
+  return best;
+}
+
+function expandChild(node, move) {
+  let childBoard;
+  let childPasses;
+  if (move === 'pass') {
+    childBoard = node.board;
+    childPasses = node.passes + 1;
+  } else {
+    childBoard = resolveMove(node.board, node.toMove, move[0], move[1]).board;
+    childPasses = 0;
+  }
+  const child = makeNode(childBoard, opponent(node.toMove), childPasses, move, node);
+  node.children.push(child);
+  return child;
+}
+
+function mctsIteration(root) {
+  let node = root;
+
+  // Selection: descend through fully-expanded, non-terminal nodes.
+  while (!node.terminal && nodeMoves(node).length === 0 && node.children.length > 0) {
+    node = selectChild(node);
+  }
+
+  // Expansion: try one new move from this node.
+  if (!node.terminal) {
+    const untried = nodeMoves(node);
+    if (untried.length > 0) {
+      const i = (Math.random() * untried.length) | 0;
+      const move = untried.splice(i, 1)[0];
+      node = expandChild(node, move);
+    }
+  }
+
+  // Simulation + backpropagation.
+  const winner = rollout(node.board, node.toMove);
+  for (let n = node; n; n = n.parent) {
+    n.visits++;
+    if (winner === opponent(n.toMove)) n.wins++;   // credit the side that moved into n
+  }
+}
+
+// Run MCTS on a time budget (sliced so the UI stays responsive), then call
+// done(bestMove) where bestMove is [r,c] or null (= pass).
+function mctsSearch(done) {
+  const root = makeNode(board, turn, passes, null, null);
+  const token = aiToken;
+  const deadline = Date.now() + MCTS_TIME_MS;
+
+  (function slice() {
+    if (token !== aiToken) return;   // a new game cancelled this search
+    const sliceEnd = Date.now() + 25;
+    while (Date.now() < sliceEnd) {
+      for (let i = 0; i < 30; i++) mctsIteration(root);
+    }
+    if (Date.now() < deadline) {
+      setTimeout(slice, 0);
+    } else {
+      done(bestRootMove(root));
+    }
+  })();
+}
+
+// The most-visited child is the most robust choice.
+function bestRootMove(root) {
+  let best = null;
+  for (const child of root.children) {
+    if (!best || child.visits > best.visits) best = child;
+  }
+  if (!best || best.move === 'pass') return null;
+  return best.move;
 }
 
 // --- board construction ---------------------------------------------------
@@ -492,11 +716,12 @@ $(function () {
   });
   $('#newgame').on('click', newGame);
 
-  // Opponent / color selection — applying it starts a fresh game.
-  $('input[name=mode], input[name=pcolor]').on('change', () => {
+  // Opponent / color / level selection — applying it starts a fresh game.
+  $('input[name=mode], input[name=pcolor], input[name=level]').on('change', () => {
     mode = $('input[name=mode]:checked').val();
     humanColor = $('input[name=pcolor]:checked').val();
     aiColor = opponent(humanColor);
+    difficulty = $('input[name=level]:checked').val();
     $('#color-choice').toggleClass('hidden', mode !== 'computer');
     newGame();
   });
