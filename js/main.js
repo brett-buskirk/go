@@ -38,26 +38,36 @@ function neighbors(r, c) {
 
 // Flood-fill from (r,c) across same-colored, connected stones.
 // Returns the whole group and how many liberties (empty adjacent points) it has.
+// Uses integer point ids + typed-array visited buffers (no string keys) because
+// this is the hottest function in the MCTS rollouts.
 function groupAt(r, c, color, b) {
-  const stack = [[r, c]];
-  const seen = new Set([`${r},${c}`]);
+  const seen = new Uint8Array(SIZE * SIZE);
+  const libSeen = new Uint8Array(SIZE * SIZE);
+  const start = r * SIZE + c;
+  const stack = [start];
+  seen[start] = 1;
   const stones = [];
-  const liberties = new Set();
+  let liberties = 0;
   while (stack.length) {
-    const [cr, cc] = stack.pop();
+    const id = stack.pop();
+    const cr = (id / SIZE) | 0;
+    const cc = id % SIZE;
     stones.push([cr, cc]);
-    for (const [nr, nc] of neighbors(cr, cc)) {
+    for (let d = 0; d < 4; d++) {
+      const nr = cr + (d === 0 ? -1 : d === 1 ? 1 : 0);
+      const nc = cc + (d === 2 ? -1 : d === 3 ? 1 : 0);
+      if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) continue;
+      const nid = nr * SIZE + nc;
       const v = b[nr][nc];
-      const key = `${nr},${nc}`;
       if (v === null) {
-        liberties.add(key);
-      } else if (v === color && !seen.has(key)) {
-        seen.add(key);
-        stack.push([nr, nc]);
+        if (!libSeen[nid]) { libSeen[nid] = 1; liberties++; }
+      } else if (v === color && !seen[nid]) {
+        seen[nid] = 1;
+        stack.push(nid);
       }
     }
   }
-  return { stones, liberties: liberties.size };
+  return { stones, liberties };
 }
 
 // Serialize a board position so we can detect repetition (the ko rule).
@@ -394,54 +404,153 @@ function scoreBoard(b) {
   return { black, white };
 }
 
-// Play a random game to the end (each side fills non-eye points until only
-// eyes remain, then both pass) and return the winner under area scoring.
+// An empty-point list with O(1) add/remove, indexed by point id = r*SIZE + c.
+// This lets a rollout mutate one board in place instead of cloning every move.
+function eAdd(id, empties, pos) {
+  if (pos[id] >= 0) return;
+  pos[id] = empties.length;
+  empties.push(id);
+}
+function eRemove(id, empties, pos) {
+  const i = pos[id];
+  if (i < 0) return;
+  const lastId = empties[empties.length - 1];
+  empties[i] = lastId;
+  pos[lastId] = i;
+  empties.pop();
+  pos[id] = -1;
+}
+
+// Place `color` at (r,c) on board `b` IN PLACE, removing captured groups and
+// keeping the empties list current. Returns the capture count, or -1 (and
+// reverts) if the move is suicide. No whole-board cloning — this is the hot path.
+function playoutPlace(b, color, r, c, empties, pos) {
+  b[r][c] = color;
+  const foe = opponent(color);
+  let captured = 0;
+  for (const [nr, nc] of neighbors(r, c)) {
+    if (b[nr][nc] === foe) {
+      const g = groupAt(nr, nc, foe, b);
+      if (g.liberties === 0) {
+        for (const [gr, gc] of g.stones) {
+          b[gr][gc] = null;
+          eAdd(gr * SIZE + gc, empties, pos);
+          captured++;
+        }
+      }
+    }
+  }
+  if (captured === 0 && groupAt(r, c, color, b).liberties === 0) {
+    b[r][c] = null;   // suicide — revert (no captures happened to undo)
+    return -1;
+  }
+  eRemove(r * SIZE + c, empties, pos);
+  return captured;
+}
+
+// If the group at (r,c) has exactly one liberty, return it [lr,lc]; else null.
+function singleLiberty(b, r, c, color) {
+  const seen = new Uint8Array(SIZE * SIZE);
+  const start = r * SIZE + c;
+  seen[start] = 1;
+  const stack = [start];
+  let libId = -1;
+  while (stack.length) {
+    const id = stack.pop();
+    const cr = (id / SIZE) | 0;
+    const cc = id % SIZE;
+    for (let d = 0; d < 4; d++) {
+      const nr = cr + (d === 0 ? -1 : d === 1 ? 1 : 0);
+      const nc = cc + (d === 2 ? -1 : d === 3 ? 1 : 0);
+      if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) continue;
+      const v = b[nr][nc];
+      if (v === null) {
+        const lid = nr * SIZE + nc;
+        if (libId === -1) libId = lid;
+        else if (libId !== lid) return null;   // more than one liberty
+      } else if (v === color && !seen[nr * SIZE + nc]) {
+        seen[nr * SIZE + nc] = 1;
+        stack.push(nr * SIZE + nc);
+      }
+    }
+  }
+  return libId === -1 ? null : [(libId / SIZE) | 0, libId % SIZE];
+}
+
+// "Heavy" playout move: respond to ataris created by the opponent's last move —
+// capture an enemy group in atari, or save one of our own. Returns [r,c] or null.
+function heavyMove(b, color, lastR, lastC) {
+  if (lastR < 0) return null;
+  const foe = opponent(color);
+  let captures = null;
+  let saves = null;
+  const around = [[lastR, lastC], [lastR - 1, lastC], [lastR + 1, lastC], [lastR, lastC - 1], [lastR, lastC + 1]];
+  for (const [r, c] of around) {
+    if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) continue;
+    const v = b[r][c];
+    if (v === foe) {
+      const lib = singleLiberty(b, r, c, foe);
+      if (lib) (captures || (captures = [])).push(lib);
+    } else if (v === color) {
+      const lib = singleLiberty(b, r, c, color);
+      if (lib) (saves || (saves = [])).push(lib);
+    }
+  }
+  const pool = captures || saves;   // capturing is preferred over saving
+  return pool ? pool[(Math.random() * pool.length) | 0] : null;
+}
+
+// Play a (tactically-biased) random game to the end and return the area-scoring
+// winner. Fast in-place rollout: one board copy, then mutate.
 function rollout(startBoard, startColor) {
-  let b = startBoard;
+  const b = startBoard.map(row => row.slice());
   let color = startColor;
-  let consecutivePasses = 0;
+  let passes = 0;
+  let lastR = -1;
+  let lastC = -1;
+  const empties = [];
+  const pos = new Array(SIZE * SIZE).fill(-1);
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (b[r][c] === null) { pos[r * SIZE + c] = empties.length; empties.push(r * SIZE + c); }
+    }
+  }
   const maxMoves = SIZE * SIZE * 2;
 
-  const empties = [];
-  for (let r = 0; r < SIZE; r++) {
-    for (let c = 0; c < SIZE; c++) if (b[r][c] === null) empties.push(`${r},${c}`);
-  }
-  const emptySet = new Set(empties);
+  for (let m = 0; m < maxMoves && passes < 2; m++) {
+    let placed = false;
 
-  for (let move = 0; move < maxMoves && consecutivePasses < 2; move++) {
-    const picked = randomPlayoutMove(b, color, emptySet);
-    if (!picked) {
-      consecutivePasses++;
-      color = opponent(color);
-      continue;
+    // 1. Tactical response most of the time.
+    if (Math.random() < 0.9) {
+      const hm = heavyMove(b, color, lastR, lastC);
+      if (hm && playoutPlace(b, color, hm[0], hm[1], empties, pos) >= 0) {
+        lastR = hm[0]; lastC = hm[1]; placed = true;
+      }
     }
-    const [r, c] = picked;
-    const res = resolveMove(b, color, r, c);
-    emptySet.delete(`${r},${c}`);
-    for (const [cr, cc] of res.capturedStones) emptySet.add(`${cr},${cc}`);
-    b = res.board;
+    // 2. A few random (non-eye) tries.
+    for (let t = 0; !placed && t < 8 && empties.length; t++) {
+      const id = empties[(Math.random() * empties.length) | 0];
+      const r = (id / SIZE) | 0;
+      const c = id % SIZE;
+      if (isEye(b, color, r, c)) continue;
+      if (playoutPlace(b, color, r, c, empties, pos) >= 0) { lastR = r; lastC = c; placed = true; }
+    }
+    // 3. Exhaustive scan so we don't pass while a legal move remains.
+    for (let i = 0; !placed && i < empties.length; i++) {
+      const id = empties[i];
+      const r = (id / SIZE) | 0;
+      const c = id % SIZE;
+      if (isEye(b, color, r, c)) continue;
+      if (playoutPlace(b, color, r, c, empties, pos) >= 0) { lastR = r; lastC = c; placed = true; }
+    }
+
+    if (!placed) { passes++; lastR = -1; lastC = -1; }
+    else passes = 0;
     color = opponent(color);
-    consecutivePasses = 0;
   }
 
   const s = scoreBoard(b);
   return s.black > s.white + KOMI ? 'black' : 'white';
-}
-
-// A random legal, non-eye-filling move for `color`, or null if none exists.
-function randomPlayoutMove(b, color, emptySet) {
-  const keys = [...emptySet];
-  // Fisher–Yates shuffle so we return the first legal move we hit, fairly.
-  for (let i = keys.length - 1; i > 0; i--) {
-    const j = (Math.random() * (i + 1)) | 0;
-    [keys[i], keys[j]] = [keys[j], keys[i]];
-  }
-  for (const key of keys) {
-    const [r, c] = key.split(',').map(Number);
-    if (isEye(b, color, r, c)) continue;
-    if (resolveMove(b, color, r, c)) return [r, c];
-  }
-  return null;
 }
 
 function makeNode(b, toMove, passes, move, parent) {
@@ -522,10 +631,42 @@ function mctsIteration(root) {
   }
 }
 
+// Restrict the root to the heuristic's best candidates (plus pass), so the
+// search refines among sensible moves instead of spreading thin over ~170 —
+// this is what makes a 1.5s budget enough to value captures and defense.
+const ROOT_CANDIDATES = 18;
+const TACTICAL_WEIGHT = 0.3;   // how strongly the heuristic biases the final pick
+function prunedRootMoves(node) {
+  const b = node.board;
+  const color = node.toMove;
+  const scored = [];
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (b[r][c] !== null || isEye(b, color, r, c)) continue;
+      const res = resolveMove(b, color, r, c);
+      if (res) scored.push({ move: [r, c], score: evaluateMove(res, color, r, c) });
+    }
+  }
+  scored.sort((a, b) => b.score - a.score);
+  const top = scored.slice(0, ROOT_CANDIDATES);
+  // Remember each candidate's heuristic score (min–max normalized across the
+  // candidates) so the final pick can favor clear tactics — captures AND
+  // atari-defense — that MCTS alone is indifferent to, regardless of scale.
+  const hi = top.length ? top[0].score : 0;
+  const lo = top.length ? top[top.length - 1].score : 0;
+  const span = hi - lo;
+  node.priors = { pass: 0 };
+  for (const { move, score } of top) {
+    node.priors[move.join(',')] = span > 0 ? (score - lo) / span : 0;
+  }
+  return [...top.map(s => s.move), 'pass'];
+}
+
 // Run MCTS on a time budget (sliced so the UI stays responsive), then call
 // done(bestMove) where bestMove is [r,c] or null (= pass).
 function mctsSearch(done) {
   const root = makeNode(board, turn, passes, null, null);
+  root.untried = prunedRootMoves(root);   // search only sensible root moves
   const token = aiToken;
   const deadline = Date.now() + MCTS_TIME_MS;
 
@@ -543,11 +684,19 @@ function mctsSearch(done) {
   })();
 }
 
-// The most-visited child is the most robust choice.
+// Pick the move with the best blend of MCTS win-rate and heuristic value, so
+// clear tactics are taken unless another move is decisively more winning.
 function bestRootMove(root) {
+  const priors = root.priors || {};
   let best = null;
+  let bestValue = -Infinity;
   for (const child of root.children) {
-    if (!best || child.visits > best.visits) best = child;
+    if (child.visits === 0) continue;
+    const winRate = child.wins / child.visits;
+    const key = child.move === 'pass' ? 'pass' : child.move.join(',');
+    const prior = priors[key] || 0;   // already normalized to [0,1]
+    const value = winRate + TACTICAL_WEIGHT * prior;
+    if (value > bestValue) { bestValue = value; best = child; }
   }
   if (!best || best.move === 'pass') return null;
   return best.move;
